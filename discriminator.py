@@ -66,4 +66,9 @@ class Discriminator:
             return output
 
     def advect(self, input):
+        """
+        The advection layer to process the sequence {x_t-1, x_t, x_t+1}
+        :param input:
+        :return:
+        """
         return 0
