@@ -1,5 +1,5 @@
 import tensorflow as tf
-import utils
+from TensorFlow import utils
 
 
 class Reader():

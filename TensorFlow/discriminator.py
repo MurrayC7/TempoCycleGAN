@@ -1,5 +1,5 @@
 import tensorflow as tf
-import ops
+from TensorFlow import ops
 
 
 class Discriminator:

@@ -1,6 +1,5 @@
 import tensorflow as tf
-import ops
-import utils
+from TensorFlow import utils, ops
 
 
 class Generator:

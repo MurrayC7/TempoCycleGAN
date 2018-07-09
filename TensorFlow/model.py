@@ -1,9 +1,8 @@
 import tensorflow as tf
-import ops
-import utils
-from reader import Reader
-from discriminator import Discriminator
-from generator import Generator
+from TensorFlow import utils, ops
+from TensorFlow.reader import Reader
+from TensorFlow.discriminator import Discriminator
+from TensorFlow.generator import Generator
 
 REAL_LABEL = 0.9
 
