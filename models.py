@@ -65,29 +65,54 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, input_nc):
+    def __init__(self, input_nc, is_tempo):
         super(Discriminator, self).__init__()
+        self.is_tempo = is_tempo
 
-        # A bunch of convolutions one after another
-        model = [nn.Conv2d(input_nc, 64, 4, stride=2, padding=1),
-                 nn.LeakyReLU(0.2, inplace=True)]
+        if not self.is_tempo:
 
-        model += [nn.Conv2d(64, 128, 4, stride=2, padding=1),
-                  nn.InstanceNorm2d(128),
-                  nn.LeakyReLU(0.2, inplace=True)]
+            # A bunch of convolutions one after another
+            model = [nn.Conv2d(input_nc, 64, 4, stride=2, padding=1),
+                     nn.LeakyReLU(0.2, inplace=True)]
 
-        model += [nn.Conv2d(128, 256, 4, stride=2, padding=1),
-                  nn.InstanceNorm2d(256),
-                  nn.LeakyReLU(0.2, inplace=True)]
+            model += [nn.Conv2d(64, 128, 4, stride=2, padding=1),
+                      nn.InstanceNorm2d(128),
+                      nn.LeakyReLU(0.2, inplace=True)]
 
-        model += [nn.Conv2d(256, 512, 4, padding=1),
-                  nn.InstanceNorm2d(512),
-                  nn.LeakyReLU(0.2, inplace=True)]
+            model += [nn.Conv2d(128, 256, 4, stride=2, padding=1),
+                      nn.InstanceNorm2d(256),
+                      nn.LeakyReLU(0.2, inplace=True)]
 
-        # FCN classification layer
-        model += [nn.Conv2d(512, 1, 4, padding=1)]
+            model += [nn.Conv2d(256, 512, 4, padding=1),
+                      nn.InstanceNorm2d(512),
+                      nn.LeakyReLU(0.2, inplace=True)]
 
-        self.model = nn.Sequential(*model)
+            # FCN classification layer
+            model += [nn.Conv2d(512, 1, 4, padding=1)]
+
+            self.model = nn.Sequential(*model)
+        else:
+
+            # A bunch of convolutions one after another
+            model = [nn.Conv2d(input_nc, 64, 4, stride=2, padding=1),
+                     nn.LeakyReLU(0.2, inplace=True)]
+
+            model += [nn.Conv2d(64, 128, 4, stride=2, padding=1),
+                      nn.InstanceNorm2d(128),
+                      nn.LeakyReLU(0.2, inplace=True)]
+
+            model += [nn.Conv2d(128, 256, 4, stride=2, padding=1),
+                      nn.InstanceNorm2d(256),
+                      nn.LeakyReLU(0.2, inplace=True)]
+
+            model += [nn.Conv2d(256, 512, 4, padding=1),
+                      nn.InstanceNorm2d(512),
+                      nn.LeakyReLU(0.2, inplace=True)]
+
+            # FCN classification layer
+            model += [nn.Conv2d(512, 1, 4, padding=1)]
+
+            self.model = nn.Sequential(*model)
 
     def forward(self, x):
         x = self.model(x)
