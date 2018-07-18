@@ -65,7 +65,7 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, input_nc, is_tempo):
+    def __init__(self, input_nc, is_tempo=False):
         super(Discriminator, self).__init__()
         self.is_tempo = is_tempo
 

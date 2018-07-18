@@ -40,8 +40,15 @@ if torch.cuda.is_available() and not opt.cuda:
 # Networks
 netG_A2B = Generator(opt.input_nc, opt.output_nc)
 netG_B2A = Generator(opt.output_nc, opt.input_nc)
+# G_advected 7/10
+# netG_warp_A2B = Generator(opt.input_nc, opt.output_nc)
+# netG_warp_B2A = Generator(opt.input_nc, opt.output_nc)
 netD_A = Discriminator(opt.input_nc)
 netD_B = Discriminator(opt.output_nc)
+
+# D_tempo 7/10
+netD_A_tempo = Discriminator(opt.input_nc, is_tempo=True)
+netD_B_tempo = Discriminator(opt.input_nc, is_tempo=True)
 
 if opt.cuda:
     netG_A2B.cuda()
@@ -49,10 +56,22 @@ if opt.cuda:
     netD_A.cuda()
     netD_B.cuda()
 
+    # 7/10
+    # netG_warp_A2B.cuda()
+    # etG_warp_B2A.cuda()
+    netD_A_tempo.cuda()
+    netD_B_tempo.cuda()
+
 netG_A2B.apply(weights_init_normal)
 netG_B2A.apply(weights_init_normal)
 netD_A.apply(weights_init_normal)
 netD_B.apply(weights_init_normal)
+
+# 7/10
+# netG_warp_A2B.apply(weights_init_normal)
+# netG_warp_B2A.apply(weights_init_normal)
+netD_A_tempo.apply(weights_init_normal)
+netD_B_tempo.apply(weights_init_normal)
 
 # Lossess
 criterion_GAN = torch.nn.MSELoss()
@@ -65,12 +84,23 @@ optimizer_G = torch.optim.Adam(itertools.chain(netG_A2B.parameters(), netG_B2A.p
 optimizer_D_A = torch.optim.Adam(netD_A.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 optimizer_D_B = torch.optim.Adam(netD_B.parameters(), lr=opt.lr, betas=(0.5, 0.999))
 
+# D_tempo 7/10
+optimizerD_A_tempo = torch.optim.Adam(netD_A.parameters(), lr=opt.lr, betas=(0.5, 0.999))
+optimizer_D_B_tempo = torch.optim.Adam(netD_B.parameters(), lr=opt.lr, betas=(0.5, 0.999))
+
 lr_scheduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G,
                                                    lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 lr_scheduler_D_A = torch.optim.lr_scheduler.LambdaLR(optimizer_D_A,
                                                      lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 lr_scheduler_D_B = torch.optim.lr_scheduler.LambdaLR(optimizer_D_B,
                                                      lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
+# D_tempo 7/10
+lr_scheduler_D_A_tempo = torch.optim.lr_scheduler.LambdaLR(optimizer_D_A,
+                                                           lr_lambda=LambdaLR(opt.n_epochs, opt.epoch,
+                                                                              opt.decay_epoch).step)
+lr_scheduler_D_B_tempo = torch.optim.lr_scheduler.LambdaLR(optimizer_D_B,
+                                                           lr_lambda=LambdaLR(opt.n_epochs, opt.epoch,
+                                                                              opt.decay_epoch).step)
 
 # Inputs & targets memory allocation
 Tensor = torch.cuda.FloatTensor if opt.cuda else torch.Tensor
@@ -79,8 +109,18 @@ input_B = Tensor(opt.batchSize, opt.output_nc, opt.size, opt.size)
 target_real = Variable(Tensor(opt.batchSize).fill_(1.0), requires_grad=False)
 target_fake = Variable(Tensor(opt.batchSize).fill_(0.0), requires_grad=False)
 
+# D_tempo 7/10
+input_A_warped = Tensor(opt.batchSize, opt.input_nc, opt.size, opt.size)
+input_B_warped = Tensor(opt.batchSize, opt.output_nc, opt.size, opt.size)
+target_real_tempo = Variable(Tensor(opt.batchSize).fill_(1.0), requires_grad=False)
+target_fake_tempo = Variable(Tensor(opt.batchSize).fill_(0.0), requires_grad=False)
+
 fake_A_buffer = ReplayBuffer()
 fake_B_buffer = ReplayBuffer()
+
+# D_tempo 7/10
+fake_A_tempo_buffer = ReplayBuffer()
+fake_B_tempo_buffer = ReplayBuffer()
 
 # Dataset loader
 transforms_ = [transforms.Resize(int(opt.size * 1.12), Image.BICUBIC),
@@ -102,39 +142,44 @@ for epoch in range(opt.epoch, opt.n_epochs):
         real_A = Variable(input_A.copy_(batch['A']))
         real_B = Variable(input_B.copy_(batch['B']))
 
-        ###### Generators A2B and B2A ######
-        optimizer_G.zero_grad()
+        # tempo input 7/10
+        real_A_tempo = Variable(input_A_warped.copy_(batch['A_tempo']))
+        real_B_tempo = Variable(input_B_warped.copy_(batch['B_tempo']))
 
-        # Identity loss
-        # G_A2B(B) should equal B if real B is fed
-        same_B = netG_A2B(real_B)
-        loss_identity_B = criterion_identity(same_B, real_B) * 5.0
-        # G_B2A(A) should equal A if real A is fed
-        same_A = netG_B2A(real_A)
-        loss_identity_A = criterion_identity(same_A, real_A) * 5.0
-
-        # GAN loss
-        fake_B = netG_A2B(real_A)
-        pred_fake = netD_B(fake_B)
-        loss_GAN_A2B = criterion_GAN(pred_fake, target_real)
-
-        fake_A = netG_B2A(real_B)
-        pred_fake = netD_A(fake_A)
-        loss_GAN_B2A = criterion_GAN(pred_fake, target_real)
-
-        # Cycle loss
-        recovered_A = netG_B2A(fake_B)
-        loss_cycle_ABA = criterion_cycle(recovered_A, real_A) * 10.0
-
-        recovered_B = netG_A2B(fake_A)
-        loss_cycle_BAB = criterion_cycle(recovered_B, real_B) * 10.0
-
-        # Total loss
-        loss_G = loss_identity_A + loss_identity_B + loss_GAN_A2B + loss_GAN_B2A + loss_cycle_ABA + loss_cycle_BAB
-        loss_G.backward()
-
-        optimizer_G.step()
-        ###################################
+        # # densities, velocities
+        # dtc, dtp, dtn, Dtc, Dtp, Dtn, vp, vn = self.iterator.get_next()
+        # self.dtc, self.Dtc = dtc, Dtc
+        #
+        # # generator
+        # G = generator(dtc, name="G", reuse=False)
+        # self.G = G
+        # Gp = generator(dtp, name="G", reuse=True)
+        # Gn = generator(dtn, name="G", reuse=True)
+        #
+        # # spatial discriminator
+        # D_s = discriminator_spatial(dtc, Dtc, name="D_s", reuse=False)
+        # D_s_g = discriminator_spatial(dtc, G, name="D_s", reuse=True)
+        #
+        # # temporal discriminator
+        # D_t = discriminator_temporal([Dtp, Dtc, Dtn],
+        #                              [vp, vn],
+        #                              name="D_t",
+        #                              reuse=False)
+        # D_t_g = discriminator_temporal([Gp, G, Gn],
+        #                                [vp, vn],
+        #                                name="D_t",
+        #                                reuse=True)
+        # # losses
+        # self.loss_D_s = -tf.reduce_mean(tf.log(D_s)) \
+        #                 - tf.reduce_mean(tf.log(tf.ones_like(D_s_g)
+        #                                         - D_s_g * config.label_smooth))
+        #
+        # self.loss_D_t = -tf.reduce_mean(tf.log(D_t)) \
+        #                 - tf.reduce_mean(tf.log(tf.ones_like(D_t_g)
+        #                                         - D_t_g * config.label_smooth))
+        #
+        # self.loss_G = -tf.reduce_mean(tf.log(D_s_g) + tf.log(D_t_g)) \
+        #               + config.lambda_L * tf.reduce_mean(tf.norm(G - Dtc))
 
         ###### Discriminator A ######
         optimizer_D_A.zero_grad()
@@ -154,6 +199,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
         optimizer_D_A.step()
         ###################################
+        # TODO: D_A_t loss
 
         ###### Discriminator B ######
         optimizer_D_B.zero_grad()
@@ -172,6 +218,66 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_D_B.backward()
 
         optimizer_D_B.step()
+        ###################################
+        # TODO：D_B_t loss
+
+        ###### Generators A2B and B2A ######
+        optimizer_G.zero_grad()
+
+        # Identity loss
+        # G_A2B(B) should equal B if real B is fed
+        same_B = netG_A2B(real_B)
+        loss_identity_B = criterion_identity(same_B, real_B) * 5.0
+        # G_B2A(A) should equal A if real A is fed
+        same_A = netG_B2A(real_A)
+        loss_identity_A = criterion_identity(same_A, real_A) * 5.0
+
+        # Identity loss tempo 7/10
+        same_B_tempo = netG_A2B(real_B_tempo)
+        loss_identity_B_tempo = criterion_identity(same_B_tempo, real_B_tempo) * 5.0
+        same_A_tempo = netG_B2A(real_A_tempo)
+        loss_identity_A_tempo = criterion_identity(same_A_tempo, real_A_tempo) * 5.0
+
+        # GAN loss
+        fake_B = netG_A2B(real_A)
+        pred_fake = netD_B(fake_B)
+        loss_GAN_A2B = criterion_GAN(pred_fake, target_real)
+
+        fake_A = netG_B2A(real_B)
+        pred_fake = netD_A(fake_A)
+        loss_GAN_B2A = criterion_GAN(pred_fake, target_real)
+
+        # GAN loss tempo 7/10
+        fake_B_tempo = netG_A2B(real_A_tempo)
+        pred_fake_tempo = netD_B(fake_B_tempo)
+        loss_GAN_A2B_tempo = criterion_GAN(pred_fake_tempo, target_real_tempo)
+
+        fake_A_tempo = netG_B2A(real_B_tempo)
+        pred_fake_tempo = netD_A(fake_A_tempo)
+        loss_GAN_B2A_tempo = criterion_GAN(pred_fake_tempo, target_real_tempo)
+
+        # Cycle loss
+        recovered_A = netG_B2A(fake_B)
+        loss_cycle_ABA = criterion_cycle(recovered_A, real_A) * 10.0
+
+        recovered_B = netG_A2B(fake_A)
+        loss_cycle_BAB = criterion_cycle(recovered_B, real_B) * 10.0
+
+        # Cycle loss
+        recovered_A = netG_B2A(fake_B)
+        loss_cycle_ABA = criterion_cycle(recovered_A, real_A) * 10.0
+
+        recovered_B = netG_A2B(fake_A)
+        loss_cycle_BAB = criterion_cycle(recovered_B, real_B) * 10.0
+
+        # Total G loss
+        # TODO: complete G loss by adding temporal D loss
+        loss_G = loss_identity_A + loss_identity_B + loss_GAN_A2B + loss_GAN_B2A + loss_cycle_ABA + loss_cycle_BAB \
+                 + loss_d_s + loss_d_t
+
+        loss_G.backward()
+
+        optimizer_G.step()
         ###################################
 
         # Progress report (http://localhost:8097)
